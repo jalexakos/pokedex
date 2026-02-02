@@ -7,12 +7,15 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
+
+	pokecache "github.com/jalexakos/pokedex/internal"
 )
 
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(map[string]cliCommand, *config) error
+	callback    func(map[string]cliCommand, *config, *pokecache.Cache) error
 }
 
 type config struct {
@@ -61,6 +64,7 @@ func main() {
 		Next:     "",
 		Previous: "",
 	}
+	cache := pokecache.NewCache(time.Second * 5)
 	for {
 		fmt.Print("Pokedex > ")
 		if !scanner.Scan() {
@@ -70,20 +74,20 @@ func main() {
 		inputText := scanner.Text()
 		firstWord := cleanInput(inputText)[0]
 		if command, exists := commands[firstWord]; exists {
-			command.callback(commands, cfg)
+			command.callback(commands, cfg, cache)
 		} else {
 			fmt.Println("Unknown command. Type 'help' for available commands.")
 		}
 	}
 }
 
-func commandExit(cmds map[string]cliCommand, cfg *config) error {
+func commandExit(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache) error {
 	fmt.Print("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp(cmds map[string]cliCommand, cfg *config) error {
+func commandHelp(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache) error {
 	fmt.Print("Welcome to the Pokedex!\nUsage:\n\n")
 	for _, info := range cmds {
 		fmt.Printf("%s: %s\n", info.name, info.description)
@@ -91,14 +95,20 @@ func commandHelp(cmds map[string]cliCommand, cfg *config) error {
 	return nil
 }
 
-func commandMap(cmds map[string]cliCommand, cfg *config) error {
+func commandMap(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache) error {
 	url := "https://pokeapi.co/api/v2/location-area"
 	if cfg.Next != "" {
 		url = cfg.Next
 	}
-	body, err := getCall(url)
-	if err != nil {
-		return err
+	var body []byte
+	body, ok := cache.Get(url)
+	if !ok {
+		var err error
+		body, err = getCall(url)
+		if err != nil {
+			return err
+		}
+		cache.Add(url, body)
 	}
 	var locationAreas locationAreas
 	if err := json.Unmarshal(body, &locationAreas); err != nil {
@@ -116,14 +126,21 @@ func commandMap(cmds map[string]cliCommand, cfg *config) error {
 	return nil
 }
 
-func commandMapBack(cmds map[string]cliCommand, cfg *config) error {
+func commandMapBack(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache) error {
 	url := "https://pokeapi.co/api/v2/location-area"
 	if cfg.Previous != "" {
 		url = cfg.Previous
 	}
-	body, err := getCall(url)
-	if err != nil {
-		return err
+	var body []byte
+	fmt.Println("url:", url)
+	body, ok := cache.Get(url)
+	if !ok {
+		var err error
+		body, err = getCall(url)
+		if err != nil {
+			return err
+		}
+		cache.Add(url, body)
 	}
 	var locationAreas locationAreas
 	if err := json.Unmarshal(body, &locationAreas); err != nil {
