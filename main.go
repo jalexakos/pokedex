@@ -15,7 +15,7 @@ import (
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(map[string]cliCommand, *config, *pokecache.Cache) error
+	callback    func(map[string]cliCommand, *config, *pokecache.Cache, string) error
 }
 
 type config struct {
@@ -33,6 +33,28 @@ type locationAreas struct {
 type locationArea struct {
 	Name string
 	URL  string
+}
+
+type exploreLocationAreas struct {
+	Id                int                `json:"id"`
+	Name              string             `json:"name"`
+	PokemonEncounters []pokemonEncounter `json:"pokemon_encounters"`
+}
+
+type pokemonEncounter struct {
+	Pokemon struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	} `json:"pokemon"`
+	VersionDetails []versionDetail `json:"version_details"`
+}
+
+type versionDetail struct {
+	Version struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	} `json:"version"`
+	Rate int `json:"rate"`
 }
 
 var commands = map[string]cliCommand{
@@ -56,6 +78,11 @@ var commands = map[string]cliCommand{
 		description: "Displays the previous map of the Pokedex",
 		callback:    commandMapBack,
 	},
+	"explore": {
+		name:        "explore",
+		description: "Displays a list of all the Pokemon in a certain area, based on the location area name or id",
+		callback:    commandExplore,
+	},
 }
 
 func main() {
@@ -72,22 +99,27 @@ func main() {
 			break
 		}
 		inputText := scanner.Text()
-		firstWord := cleanInput(inputText)[0]
+		words := cleanInput(inputText)
+		firstWord := words[0]
+		secondWord := ""
+		if len(words) > 1 {
+			secondWord = words[1]
+		}
 		if command, exists := commands[firstWord]; exists {
-			command.callback(commands, cfg, cache)
+			command.callback(commands, cfg, cache, secondWord)
 		} else {
 			fmt.Println("Unknown command. Type 'help' for available commands.")
 		}
 	}
 }
 
-func commandExit(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache) error {
+func commandExit(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string) error {
 	fmt.Print("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache) error {
+func commandHelp(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string) error {
 	fmt.Print("Welcome to the Pokedex!\nUsage:\n\n")
 	for _, info := range cmds {
 		fmt.Printf("%s: %s\n", info.name, info.description)
@@ -95,7 +127,7 @@ func commandHelp(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache
 	return nil
 }
 
-func commandMap(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache) error {
+func commandMap(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string) error {
 	url := "https://pokeapi.co/api/v2/location-area"
 	if cfg.Next != "" {
 		url = cfg.Next
@@ -126,7 +158,7 @@ func commandMap(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache)
 	return nil
 }
 
-func commandMapBack(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache) error {
+func commandMapBack(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string) error {
 	url := "https://pokeapi.co/api/v2/location-area"
 	if cfg.Previous != "" {
 		url = cfg.Previous
@@ -170,4 +202,28 @@ func getCall(url string) ([]byte, error) {
 		return nil, err
 	}
 	return body, nil
+}
+
+func commandExplore(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string) error {
+	url := "https://pokeapi.co/api/v2/location-area/" + secondWord
+	var body []byte
+	body, ok := cache.Get(url)
+	if !ok {
+		var err error
+		body, err = getCall(url)
+		if err != nil {
+			return err
+		}
+		cache.Add(url, body)
+	}
+	var exploreLocationAreas exploreLocationAreas
+	if err := json.Unmarshal(body, &exploreLocationAreas); err != nil {
+		return err
+	}
+
+	fmt.Println("Exploring ", secondWord, "...")
+	for _, pokemonEncounter := range exploreLocationAreas.PokemonEncounters {
+		fmt.Printf("%s\n", pokemonEncounter.Pokemon.Name)
+	}
+	return nil
 }
