@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"time"
@@ -15,7 +16,7 @@ import (
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(map[string]cliCommand, *config, *pokecache.Cache, string) error
+	callback    func(map[string]cliCommand, *config, *pokecache.Cache, string, map[string]pokemon) error
 }
 
 type config struct {
@@ -57,6 +58,11 @@ type versionDetail struct {
 	Rate int `json:"rate"`
 }
 
+type pokemon struct {
+	Name           string `json:"name"`
+	BaseExperience int    `json:"base_experience"`
+}
+
 var commands = map[string]cliCommand{
 	"exit": {
 		name:        "exit",
@@ -83,6 +89,11 @@ var commands = map[string]cliCommand{
 		description: "Displays a list of all the Pokemon in a certain area, based on the location area name or id",
 		callback:    commandExplore,
 	},
+	"catch": {
+		name:        "catch",
+		description: "Attempts to catch a Pokemon",
+		callback:    commandCatch,
+	},
 }
 
 func main() {
@@ -92,6 +103,7 @@ func main() {
 		Previous: "",
 	}
 	cache := pokecache.NewCache(time.Second * 5)
+	pokedex := make(map[string]pokemon)
 	for {
 		fmt.Print("Pokedex > ")
 		if !scanner.Scan() {
@@ -106,20 +118,20 @@ func main() {
 			secondWord = words[1]
 		}
 		if command, exists := commands[firstWord]; exists {
-			command.callback(commands, cfg, cache, secondWord)
+			command.callback(commands, cfg, cache, secondWord, pokedex)
 		} else {
 			fmt.Println("Unknown command. Type 'help' for available commands.")
 		}
 	}
 }
 
-func commandExit(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string) error {
+func commandExit(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string, pokedex map[string]pokemon) error {
 	fmt.Print("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string) error {
+func commandHelp(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string, pokedex map[string]pokemon) error {
 	fmt.Print("Welcome to the Pokedex!\nUsage:\n\n")
 	for _, info := range cmds {
 		fmt.Printf("%s: %s\n", info.name, info.description)
@@ -127,7 +139,7 @@ func commandHelp(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache
 	return nil
 }
 
-func commandMap(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string) error {
+func commandMap(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string, pokedex map[string]pokemon) error {
 	url := "https://pokeapi.co/api/v2/location-area"
 	if cfg.Next != "" {
 		url = cfg.Next
@@ -158,7 +170,7 @@ func commandMap(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache,
 	return nil
 }
 
-func commandMapBack(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string) error {
+func commandMapBack(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string, pokedex map[string]pokemon) error {
 	url := "https://pokeapi.co/api/v2/location-area"
 	if cfg.Previous != "" {
 		url = cfg.Previous
@@ -204,7 +216,7 @@ func getCall(url string) ([]byte, error) {
 	return body, nil
 }
 
-func commandExplore(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string) error {
+func commandExplore(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string, pokedex map[string]pokemon) error {
 	url := "https://pokeapi.co/api/v2/location-area/" + secondWord
 	var body []byte
 	body, ok := cache.Get(url)
@@ -221,9 +233,38 @@ func commandExplore(cmds map[string]cliCommand, cfg *config, cache *pokecache.Ca
 		return err
 	}
 
-	fmt.Println("Exploring ", secondWord, "...")
+	exploringLine := "Exploring " + secondWord + "..."
+	fmt.Println(exploringLine)
 	for _, pokemonEncounter := range exploreLocationAreas.PokemonEncounters {
 		fmt.Printf("%s\n", pokemonEncounter.Pokemon.Name)
+	}
+	return nil
+}
+
+func commandCatch(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string, pokedex map[string]pokemon) error {
+	url := "https://pokeapi.co/api/v2/pokemon/" + secondWord
+	var body []byte
+	body, ok := cache.Get(url)
+	if !ok {
+		var err error
+		body, err = getCall(url)
+		if err != nil {
+			return err
+		}
+		cache.Add(url, body)
+	}
+	var pokemon pokemon
+	if err := json.Unmarshal(body, &pokemon); err != nil {
+		return err
+	}
+	catchingLine := "Throwing a Pokeball at " + pokemon.Name + "..."
+	fmt.Println(catchingLine)
+	attempt := rand.Intn(346)
+	if attempt > pokemon.BaseExperience {
+		fmt.Printf("%s was caught!\n", pokemon.Name)
+		pokedex[pokemon.Name] = pokemon
+	} else {
+		fmt.Printf("%s escaped!\n", pokemon.Name)
 	}
 	return nil
 }
