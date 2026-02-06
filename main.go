@@ -120,6 +120,11 @@ var commands = map[string]cliCommand{
 		description: "Displays detailed information about a Pokemon",
 		callback:    commandInspect,
 	},
+	"pokedex": {
+		name:        "pokedex",
+		description: "Displays your Pokedex",
+		callback:    commandPokedex,
+	},
 }
 
 func main() {
@@ -268,6 +273,10 @@ func commandExplore(cmds map[string]cliCommand, cfg *config, cache *pokecache.Ca
 }
 
 func commandCatch(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string, pokedex map[string]pokemon) error {
+	if secondWord == "" {
+		fmt.Println("Please provide a Pokemon name to catch.")
+		return nil
+	}
 	url := "https://pokeapi.co/api/v2/pokemon/" + secondWord
 	var body []byte
 	body, ok := cache.Get(url)
@@ -310,6 +319,19 @@ func commandInspect(cmds map[string]cliCommand, cfg *config, cache *pokecache.Ca
 		}
 	} else {
 		fmt.Println("you have not caught that pokemon")
+	}
+	return nil
+}
+
+func commandPokedex(cmds map[string]cliCommand, cfg *config, cache *pokecache.Cache, secondWord string, pokedex map[string]pokemon) error {
+	if len(pokedex) == 0 {
+		fmt.Println("You have not caught any pokemon yet.")
+		return nil
+	}
+
+	fmt.Println("Your Pokedex:")
+	for _, pokemon := range pokedex {
+		fmt.Printf("- %s\n", pokemon.Name)
 	}
 	return nil
 }
